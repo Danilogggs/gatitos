@@ -12,3 +12,14 @@
 .breed-score-track{height:8px;overflow:hidden;border-radius:999px;background:#eef2ec}
 .breed-score-track span{display:block;height:100%;border-radius:999px;background:#559a84}
 @media(max-width:540px){.breed-score-row{grid-template-columns:minmax(90px,120px) minmax(50px,1fr) 58px;gap:7px;font-size:11px}}
+
+/* Área de fotos com suporte a clique e arrastar/soltar. */
+.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.photo-field{margin-bottom:22px}
+.photo-dropzone{min-height:145px;border:2px dashed #cbdacf;border-radius:14px;background:#f8faf6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:22px;text-align:center;cursor:pointer;color:#71857a;transition:border-color .18s,background .18s,box-shadow .18s,transform .18s}
+.photo-dropzone:hover,.photo-dropzone:focus-within{border-color:#6f9a85;background:#f1f7ef;box-shadow:0 0 0 4px #709b8417}
+.photo-dropzone.dragging{border-color:#315c53;background:#e7f2e8;box-shadow:0 0 0 4px #315c5320;transform:scale(1.01)}
+.photo-dropzone .dropzone-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:50%;background:#e1ede2;color:#315c53;font-size:24px;line-height:1}
+.photo-dropzone strong{color:#315c53;font-size:15px}
+.photo-dropzone .dropzone-count{margin-top:5px;border-radius:20px;background:#dceadf;color:#426758;padding:5px 10px;font-size:11px;font-weight:800}
+.field .field-error{color:#a54132;font-weight:700}
