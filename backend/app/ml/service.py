@@ -55,21 +55,30 @@ class RealMLService(MLService):
         self.model = models.efficientnet_b0(weights=None)
         size = self.model.classifier[1].in_features
         self.model.classifier = torch.nn.Identity()
-        self.breed_head = torch.nn.Linear(size, len(BREEDS))
-        self.feature_head = torch.nn.Linear(size, len(FEATURES))
-        self.pattern_head = torch.nn.Linear(size, len(PATTERNS))
-        self.color_head = torch.nn.Linear(size, len(COLORS))
-        self.length_head = torch.nn.Linear(size, len(COAT_LENGTHS))
         checkpoint = torch.load(config.ml_model_path, map_location='cpu', weights_only=True)
         self.model.load_state_dict(checkpoint['backbone'])
-        self.breed_head.load_state_dict(checkpoint['breed_head'])
-        self.feature_head.load_state_dict(checkpoint['feature_head'])
-        self.pattern_head.load_state_dict(checkpoint['pattern_head'])
-        self.color_head.load_state_dict(checkpoint['color_head'])
-        self.length_head.load_state_dict(checkpoint['length_head'])
+        self.breeds = list(checkpoint.get('breeds', BREEDS))
+        if not self.breeds or len(set(self.breeds)) != len(self.breeds) or set(self.breeds) - set(BREEDS):
+            raise ValueError('Checkpoint contém raças incompatíveis com a taxonomia')
+        trained_heads = set(checkpoint.get('trained_heads', ['breed', 'feature', 'pattern', 'color', 'length']))
+
+        def load_head(name: str, classes: int):
+            if name not in trained_heads:
+                return None
+            head = torch.nn.Linear(size, classes)
+            head.load_state_dict(checkpoint[f'{name}_head'])
+            head.eval()
+            return head
+
+        self.breed_head = load_head('breed', len(self.breeds))
+        if self.breed_head is None:
+            raise ValueError('Checkpoint sem cabeça de raça treinada')
+        self.feature_head = load_head('feature', len(FEATURES))
+        self.pattern_head = load_head('pattern', len(PATTERNS))
+        self.color_head = load_head('color', len(COLORS))
+        self.length_head = load_head('length', len(COAT_LENGTHS))
         self.version = str(checkpoint.get('version', 'efficientnet-b0'))
-        for module in (self.model, self.breed_head, self.feature_head, self.pattern_head, self.color_head, self.length_head):
-            module.eval()
+        self.model.eval()
 
     def _features(self, image: bytes):
         with Image.open(BytesIO(image)) as opened:
@@ -81,19 +90,28 @@ class RealMLService(MLService):
         with self.torch.no_grad():
             vectors = self.torch.cat([self._features(image) for image in images]).mean(dim=0, keepdim=True)
             breeds = self.torch.softmax(self.breed_head(vectors), dim=1)[0]
-            feature_scores = self.torch.sigmoid(self.feature_head(vectors))[0]
-            pattern_scores = self.torch.softmax(self.pattern_head(vectors), dim=1)[0]
-            color_scores = self.torch.sigmoid(self.color_head(vectors))[0]
-            length_scores = self.torch.softmax(self.length_head(vectors), dim=1)[0]
             breed_index = int(breeds.argmax())
-            labels = list(FEATURES)
-            features = [labels[i] for i, score in enumerate(feature_scores.tolist()) if score >= 0.5]
-            colors = [COLORS[i] for i, score in enumerate(color_scores.tolist()) if score >= 0.5]
-            pattern_index = int(pattern_scores.argmax())
-            length_index = int(length_scores.argmax())
-        return Prediction(BREEDS[breed_index], float(breeds[breed_index]), features,
-                          PATTERNS[pattern_index], colors, COAT_LENGTHS[length_index],
-                          float(pattern_scores[pattern_index]), self.version)
+            features = []
+            if self.feature_head is not None:
+                scores = self.torch.sigmoid(self.feature_head(vectors))[0]
+                features = [label for label, score in zip(FEATURES, scores.tolist()) if score >= 0.5]
+            colors = []
+            if self.color_head is not None:
+                scores = self.torch.sigmoid(self.color_head(vectors))[0]
+                colors = [label for label, score in zip(COLORS, scores.tolist()) if score >= 0.5]
+            coat_pattern = None
+            coat_confidence = None
+            if self.pattern_head is not None:
+                scores = self.torch.softmax(self.pattern_head(vectors), dim=1)[0]
+                index = int(scores.argmax())
+                coat_pattern = PATTERNS[index]
+                coat_confidence = float(scores[index])
+            coat_length = None
+            if self.length_head is not None:
+                scores = self.torch.softmax(self.length_head(vectors), dim=1)[0]
+                coat_length = COAT_LENGTHS[int(scores.argmax())]
+        return Prediction(self.breeds[breed_index], float(breeds[breed_index]), features,
+                          coat_pattern, colors, coat_length, coat_confidence, self.version)
 
     def generate_embedding(self, image: bytes) -> list[float]:
         vector = self._features(image)[0]

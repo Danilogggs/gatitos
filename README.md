@@ -20,13 +20,15 @@ Nenhuma dependência foi instalada, e o aplicativo, build e testes não foram ex
 
 ## ML e LLM
 
-`ML_MODE=mock` deixa explícito na interface que o modelo não está treinado e **não cria palpites falsos**. Para `ML_MODE=real`, o checkpoint deve conter `backbone`, `breed_head`, `feature_head`, `pattern_head`, `color_head`, `length_head` e `version`, treinados com as classes de `backend/app/ml/taxonomy.py`. Raça, padrão e comprimento usam softmax; características e cores usam sigmoid. O dataset e pesos não entram no repositório nem no Storage da aplicação.
+`ML_MODE=mock` deixa explícito na interface que o modelo não está treinado e **não cria palpites falsos**. Para `ML_MODE=real`, o checkpoint deve conter `backbone`, `breed_head`, `breeds` e `version`. As cabeças opcionais `feature_head`, `pattern_head`, `color_head` e `length_head` só produzem previsões quando estiverem treinadas e listadas em `trained_heads`. O checkpoint gerado com Oxford treina apenas raça; portanto características, padrão, cores e comprimento ficam sem previsão. O dataset e os pesos não entram no repositório nem no Storage da aplicação.
 
 O Gemini usa `GEMINI_API_KEY` e `GEMINI_MODEL` do ambiente. Se não estiver configurado ou falhar, uma descrição factual local é usada. Comportamento somente entra no texto se uma pessoa o informou.
 
 ## Treinamento no Colab
 
-Abra o [notebook de treinamento](https://colab.research.google.com/github/Danilogggs/gatitos/blob/main/notebooks/CatCare_AI_treinamento.ipynb), selecione uma GPU e execute as células em ordem. Ele solicita um ZIP com imagens e um `labels.csv` rotulado nas colunas `path,breed,features,coat_pattern,colors,coat_length,split`. Fotos sem rótulos não bastam para treinar todas as saídas do modelo. O notebook confere o formato do dataset, treina e oferece o download de `catcare.pt`. Não envie `.env` ou chaves ao Colab.
+Abra o [notebook de treinamento com Oxford-IIIT Pet](https://colab.research.google.com/github/Danilogggs/gatitos/blob/main/notebooks/CatCare_AI_treinamento.ipynb), selecione uma GPU e execute as células em ordem. Ele baixa o dataset automaticamente, seleciona as 12 raças de gatos, treina o EfficientNet-B0 e oferece o download de `catcare-oxford.pt`. Você não precisa enviar fotos nem `labels.csv`. O Oxford não inclui uma classe SRD nem rótulos das características de pelagem do aplicativo; a raça prevista é somente uma sugestão visual que precisa de revisão humana. Após o download, coloque o checkpoint no computador do backend e configure `ML_MODEL_PATH` e `ML_MODE=real` no `.env` local. Não envie `.env` ou chaves ao Colab.
+
+O [notebook de treinamento completo](https://colab.research.google.com/github/Danilogggs/gatitos/blob/main/notebooks/CatCare_AI_treinamento_completo.ipynb) continua disponível para quando houver imagens com `labels.csv` rotulado nas colunas `path,breed,features,coat_pattern,colors,coat_length,split`.
 
 ## Segurança e fluxo
 
