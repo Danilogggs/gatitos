@@ -1,6 +1,6 @@
 export type Status = 'DRAFT' | 'PENDING_REVIEW' | 'PUBLISHED' | 'REJECTED' | 'ADOPTED' | 'ARCHIVED'
 export type Image = { id: string; url: string; storage_path: string; position: number; is_primary: boolean }
-export type Prediction = { id?: string; breed?: string | null; predicted_breed?: string | null; breed_confidence?: number | null; features?: string[]; predicted_features?: string[]; coat_pattern?: string | null; predicted_coat_pattern?: string | null; coat_confidence?: number | null; colors?: string[]; coat_length?: string | null; description?: string; model_version: string }
+export type Prediction = { id?: string; breed?: string | null; breed_scores?: Record<string,number>; predicted_breed?: string | null; breed_confidence?: number | null; features?: string[]; predicted_features?: string[]; coat_pattern?: string | null; predicted_coat_pattern?: string | null; coat_confidence?: number | null; colors?: string[]; coat_length?: string | null; description?: string; model_version: string }
 export type Cat = {
   id: string; name: string; status: Status; images: Image[]; features: string[]; breed: string | null;
   coat_pattern: string | null; coat_length: string | null; primary_color: string | null; secondary_color: string | null;

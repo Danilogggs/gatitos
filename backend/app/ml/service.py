@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io import BytesIO
 
 from PIL import Image
@@ -18,6 +18,7 @@ class Prediction:
     coat_length: str | None
     coat_confidence: float | None
     model_version: str
+    breed_scores: dict[str, float] = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return vars(self)
@@ -129,7 +130,8 @@ class RealMLService(MLService):
                 scores = self.torch.softmax(self.length_head(vectors), dim=1)[0]
                 coat_length = COAT_LENGTHS[int(scores.argmax())]
         return Prediction(breed, breed_confidence, features,
-                          coat_pattern, colors, coat_length, coat_confidence, self.version)
+                          coat_pattern, colors, coat_length, coat_confidence, self.version,
+                          {label: float(score) for label, score in zip(self.breeds, breeds.tolist())})
 
     def generate_embedding(self, image: bytes) -> list[float]:
         vector = self._features(image)[0]

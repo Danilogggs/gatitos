@@ -24,6 +24,8 @@ Nenhuma dependência foi instalada, e o aplicativo, build e testes não foram ex
 
 Como o Oxford não contém exemplos de SRD, o backend usa `srd` como resultado provisório quando a maior probabilidade entre as 12 raças é menor que `ML_BREED_MIN_CONFIDENCE` (padrão: `0.50`). Com várias fotos, uma raça também pode ser sugerida quando uma foto chega a até 0,05 abaixo desse limite, a maioria das fotos vota na mesma raça e pelo menos duas delas a apoiam com probabilidade de 0,50 ou mais. Essa margem tolera pequenas mudanças causadas pela conversão das fotos para WebP. O valor no `.env` pode ser ajustado: aumentá-lo manda mais gatos para SRD e pode rejeitar raças reais; diminuí-lo aceita mais raças e pode classificar um SRD como uma delas. Uma probabilidade alta **não prova** que o gato é de raça pura nem garante a identificação de todo SRD. A revisão do administrador é obrigatória. O campo `breed_confidence` fica vazio no fallback SRD porque o modelo não foi treinado para medir confiança nessa classe.
 
+A prévia do cadastro mostra as pontuações das 12 raças treinadas em ordem decrescente. Esses valores são relativos às classes do checkpoint e não representam a probabilidade de pedigree; SRD não recebe pontuação porque não foi treinado como classe.
+
 O Gemini usa `GEMINI_API_KEY` e `GEMINI_MODEL` do ambiente. Se não estiver configurado ou falhar, uma descrição factual local é usada. Comportamento somente entra no texto se uma pessoa o informou.
 
 ## Treinamento no Colab
