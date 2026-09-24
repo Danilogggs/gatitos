@@ -1,6 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
     gemini_model: str = ''
     ml_mode: str = 'mock'
     ml_model_path: str = ''
+    ml_breed_min_confidence: float = Field(default=0.85, ge=0.0, le=1.0)
     frontend_origin: str = 'http://localhost:5173'
 
 

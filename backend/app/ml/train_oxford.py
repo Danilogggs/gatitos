@@ -3,6 +3,7 @@
 Uso no Colab: python -m app.ml.train_oxford --data-dir /content/data --output /content/catcare-oxford.pt
 O dataset é baixado automaticamente pelo torchvision. Oxford não tem rótulos de SRD
 nem da taxonomia de características, cores, padrões e comprimento do CatCare AI.
+O fallback SRD por baixa confiança acontece na inferência do backend.
 """
 
 import argparse

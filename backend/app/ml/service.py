@@ -77,6 +77,7 @@ class RealMLService(MLService):
         self.pattern_head = load_head('pattern', len(PATTERNS))
         self.color_head = load_head('color', len(COLORS))
         self.length_head = load_head('length', len(COAT_LENGTHS))
+        self.breed_min_confidence = config.ml_breed_min_confidence
         self.version = str(checkpoint.get('version', 'efficientnet-b0'))
         self.model.eval()
 
@@ -91,6 +92,12 @@ class RealMLService(MLService):
             vectors = self.torch.cat([self._features(image) for image in images]).mean(dim=0, keepdim=True)
             breeds = self.torch.softmax(self.breed_head(vectors), dim=1)[0]
             breed_index = int(breeds.argmax())
+            breed_confidence = float(breeds[breed_index])
+            breed = self.breeds[breed_index]
+            # O Oxford não contém SRD. Resultados incertos viram SRD provisório.
+            if 'srd' not in self.breeds and breed_confidence < self.breed_min_confidence:
+                breed = 'srd'
+                breed_confidence = None  # A probabilidade da raça rejeitada não mede confiança em SRD.
             features = []
             if self.feature_head is not None:
                 scores = self.torch.sigmoid(self.feature_head(vectors))[0]
@@ -110,7 +117,7 @@ class RealMLService(MLService):
             if self.length_head is not None:
                 scores = self.torch.softmax(self.length_head(vectors), dim=1)[0]
                 coat_length = COAT_LENGTHS[int(scores.argmax())]
-        return Prediction(self.breeds[breed_index], float(breeds[breed_index]), features,
+        return Prediction(breed, breed_confidence, features,
                           coat_pattern, colors, coat_length, coat_confidence, self.version)
 
     def generate_embedding(self, image: bytes) -> list[float]:
