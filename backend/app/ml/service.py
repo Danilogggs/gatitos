@@ -89,13 +89,23 @@ class RealMLService(MLService):
 
     def predict(self, images: list[bytes]) -> Prediction:
         with self.torch.no_grad():
-            vectors = self.torch.cat([self._features(image) for image in images]).mean(dim=0, keepdim=True)
+            image_vectors = self.torch.cat([self._features(image) for image in images])
+            vectors = image_vectors.mean(dim=0, keepdim=True)
             breeds = self.torch.softmax(self.breed_head(vectors), dim=1)[0]
             breed_index = int(breeds.argmax())
             breed_confidence = float(breeds[breed_index])
             breed = self.breeds[breed_index]
-            # O Oxford não contém SRD. Resultados incertos viram SRD provisório.
-            if 'srd' not in self.breeds and breed_confidence < self.breed_min_confidence:
+            # Uma foto forte pode sustentar a raça quando a maioria das outras concorda.
+            corroborated = False
+            if 'srd' not in self.breeds and len(images) > 1 and breed_confidence < self.breed_min_confidence:
+                per_image = self.torch.softmax(self.breed_head(image_vectors), dim=1)
+                votes = per_image.argmax(dim=1) == breed_index
+                candidate_scores = per_image[:, breed_index]
+                corroborated = (int(votes.sum()) > len(images) / 2
+                                and int((votes & (candidate_scores >= 0.5)).sum()) >= 2
+                                and float(candidate_scores.max()) >= self.breed_min_confidence)
+            # O Oxford não contém SRD. Sem evidência suficiente, o resultado é provisório.
+            if 'srd' not in self.breeds and breed_confidence < self.breed_min_confidence and not corroborated:
                 breed = 'srd'
                 breed_confidence = None  # A probabilidade da raça rejeitada não mede confiança em SRD.
             features = []
