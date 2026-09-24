@@ -6,10 +6,16 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=Path(__file__).resolve().parents[3] / '.env', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file=(
+            Path(__file__).resolve().parents[3] / '.env',
+            Path(__file__).resolve().parents[3] / '.env.local',
+        ),
+        extra='ignore',
+    )
     supabase_url: str
     supabase_anon_key: str
-    supabase_service_role_key: str
+    supabase_service_role_key: str = ''
     supabase_storage_bucket: str = 'cat-images'
     gemini_api_key: str = ''
     gemini_model: str = ''

@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from io import BytesIO
+from pathlib import Path
 
 from PIL import Image
 
@@ -56,7 +57,10 @@ class RealMLService(MLService):
         self.model = models.efficientnet_b0(weights=None)
         size = self.model.classifier[1].in_features
         self.model.classifier = torch.nn.Identity()
-        checkpoint = torch.load(config.ml_model_path, map_location='cpu', weights_only=True)
+        model_path = Path(config.ml_model_path)
+        if not model_path.is_absolute():
+            model_path = Path(__file__).resolve().parents[2] / model_path
+        checkpoint = torch.load(model_path, map_location='cpu', weights_only=True)
         self.model.load_state_dict(checkpoint['backbone'])
         self.breeds = list(checkpoint.get('breeds', BREEDS))
         if not self.breeds or len(set(self.breeds)) != len(self.breeds) or set(self.breeds) - set(BREEDS):

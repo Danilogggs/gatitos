@@ -1,10 +1,13 @@
-.env
 **/.env
+!/.env
+!/frontend/.env
 **/__pycache__/
 **/.venv/
 **/node_modules/
 **/dist/
 *.pt
+!backend/models/catcare-oxford.pt
 *.pth
 dataset/
 
+**/.env.local
