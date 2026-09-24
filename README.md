@@ -24,6 +24,10 @@ Nenhuma dependência foi instalada, e o aplicativo, build e testes não foram ex
 
 O Gemini usa `GEMINI_API_KEY` e `GEMINI_MODEL` do ambiente. Se não estiver configurado ou falhar, uma descrição factual local é usada. Comportamento somente entra no texto se uma pessoa o informou.
 
+## Treinamento no Colab
+
+Abra o [notebook de treinamento](https://colab.research.google.com/github/Danilogggs/gatitos/blob/main/notebooks/CatCare_AI_treinamento.ipynb), selecione uma GPU e execute as células em ordem. Ele solicita um ZIP com imagens e um `labels.csv` rotulado nas colunas `path,breed,features,coat_pattern,colors,coat_length,split`. Fotos sem rótulos não bastam para treinar todas as saídas do modelo. O notebook confere o formato do dataset, treina e oferece o download de `catcare.pt`. Não envie `.env` ou chaves ao Colab.
+
 ## Segurança e fluxo
 
 Apenas a API usa a service role do Supabase. As tabelas têm RLS sem acesso direto pelo cliente. A API pública só consulta `PUBLISHED` e não retorna previsões nem confiança. Rotas administrativas exigem JWT válido do Supabase Auth e registro em `admin_users`. Todo envio, inclusive de administrador, entra em `PENDING_REVIEW`.
