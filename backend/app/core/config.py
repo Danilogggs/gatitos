@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     gemini_model: str = ''
     ml_mode: str = 'mock'
     ml_model_path: str = ''
-    ml_breed_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    ml_breed_min_confidence: float = Field(default=0.4, ge=0.0, le=1.0)
     frontend_origin: str = 'http://localhost:5173'
 
 
