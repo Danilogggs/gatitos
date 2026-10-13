@@ -125,10 +125,15 @@ def run() -> None:
     parser.add_argument('--output', type=Path, default=Path('/content/catcare-oxford.pt'))
     parser.add_argument('--epochs', type=int, default=8)
     parser.add_argument('--batch-size', type=int, default=16)
+    parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
     if args.epochs < 1 or args.batch_size < 1:
         parser.error('Épocas e tamanho do lote devem ser positivos')
 
+    random.seed(args.seed)
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     train_transform = transforms.Compose([
         transforms.Resize((256, 256)), transforms.RandomResizedCrop(224),
@@ -163,7 +168,8 @@ def run() -> None:
 
     # 4. Cria os lotes depois que os três conjuntos estão definidos.
     loader_options = {'batch_size': args.batch_size, 'num_workers': 2, 'pin_memory': device.type == 'cuda'}
-    train_loader = DataLoader(train_dataset, shuffle=True, **loader_options)
+    loader_generator = torch.Generator().manual_seed(args.seed)
+    train_loader = DataLoader(train_dataset, shuffle=True, generator=loader_generator, **loader_options)
     validation_loader = DataLoader(validation_dataset, **loader_options)
     test_loader = DataLoader(test_dataset, **loader_options)
     print(f'Dispositivo: {device}; treino: {len(train_dataset)}; validação: {len(validation_dataset)}; '
