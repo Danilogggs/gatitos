@@ -21,6 +21,51 @@ from app.ml.taxonomy import BREEDS
 OXFORD_BREEDS = [breed for breed in BREEDS if breed != 'srd']
 
 
+def classification_metrics(labels: list[int], predictions: list[int], classes: int) -> dict:
+    """Calcula matriz de confusao e metricas sem depender do scikit-learn."""
+    matrix = [[0 for _ in range(classes)] for _ in range(classes)]
+    for expected, predicted in zip(labels, predictions):
+        matrix[expected][predicted] += 1
+
+    per_class = []
+    for index in range(classes):
+        true_positive = matrix[index][index]
+        false_positive = sum(matrix[row][index] for row in range(classes)) - true_positive
+        false_negative = sum(matrix[index]) - true_positive
+        support = sum(matrix[index])
+        precision = true_positive / (true_positive + false_positive) if true_positive + false_positive else 0.0
+        recall = true_positive / (true_positive + false_negative) if true_positive + false_negative else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+        per_class.append({'precision': precision, 'recall': recall, 'f1': f1, 'support': support})
+
+    total = len(labels)
+    return {
+        'matrix': matrix,
+        'accuracy': sum(matrix[index][index] for index in range(classes)) / total if total else 0.0,
+        'macro_precision': sum(row['precision'] for row in per_class) / classes,
+        'macro_recall': sum(row['recall'] for row in per_class) / classes,
+        'macro_f1': sum(row['f1'] for row in per_class) / classes,
+        'per_class': per_class,
+    }
+
+
+def print_classification_report(labels: list[int], predictions: list[int]) -> None:
+    """Exibe no Colab as evidencias pedidas no requisito 4."""
+    metrics = classification_metrics(labels, predictions, len(OXFORD_BREEDS))
+    print('\nMatriz de confusao (linhas=real, colunas=previsto):', flush=True)
+    print(' ' * 22 + ' '.join(f'{index:>4}' for index in range(len(OXFORD_BREEDS))), flush=True)
+    for index, row in enumerate(metrics['matrix']):
+        print(f'{index:>2} {OXFORD_BREEDS[index]:<18}' + ' '.join(f'{value:>4}' for value in row), flush=True)
+    print('\nMetricas por raca:', flush=True)
+    print(f'{"raca":<20} {"precisao":>9} {"recall":>9} {"f1-score":>9} {"suporte":>8}', flush=True)
+    for breed, row in zip(OXFORD_BREEDS, metrics['per_class']):
+        print(f'{breed:<20} {row["precision"]:>9.1%} {row["recall"]:>9.1%} '
+              f'{row["f1"]:>9.1%} {row["support"]:>8}', flush=True)
+    print(f'\nResumo do teste: acuracia={metrics["accuracy"]:.1%}; '
+          f'precisao macro={metrics["macro_precision"]:.1%}; recall macro={metrics["macro_recall"]:.1%}; '
+          f'F1 macro={metrics["macro_f1"]:.1%}', flush=True)
+
+
 def select_cat_samples(source: datasets.OxfordIIITPet) -> list[tuple[int, int]]:
     """Retorna (índice da imagem, índice da raça) somente para gatos."""
     samples = []
@@ -136,11 +181,13 @@ def run() -> None:
     criterion = nn.CrossEntropyLoss()
     best_validation_accuracy = -1.0
 
-    def run_epoch(loader: DataLoader, training: bool) -> tuple[float, float]:
+    def run_epoch(loader: DataLoader, training: bool, collect_predictions: bool = False):
         backbone.train(training)
         breed_head.train(training)
         total_loss = 0.0
         correct = 0
+        all_labels = []
+        all_predictions = []
         for images, labels in loader:
             images, labels = images.to(device), labels.to(device)
             with torch.set_grad_enabled(training):
@@ -151,8 +198,13 @@ def run() -> None:
                     loss.backward()
                     optimizer.step()
             total_loss += loss.item() * len(images)
-            correct += (logits.argmax(dim=1) == labels).sum().item()
-        return total_loss / len(loader.dataset), correct / len(loader.dataset)
+            predictions = logits.argmax(dim=1)
+            correct += (predictions == labels).sum().item()
+            if collect_predictions:
+                all_labels.extend(labels.detach().cpu().tolist())
+                all_predictions.extend(predictions.detach().cpu().tolist())
+        result = (total_loss / len(loader.dataset), correct / len(loader.dataset))
+        return (*result, all_labels, all_predictions) if collect_predictions else result
 
     # 6. Treina e salva somente o checkpoint com melhor validação.
     for epoch in range(1, args.epochs + 1):
@@ -176,9 +228,10 @@ def run() -> None:
     checkpoint = torch.load(args.output, map_location=device, weights_only=True)
     backbone.load_state_dict(checkpoint['backbone'])
     breed_head.load_state_dict(checkpoint['breed_head'])
-    test_loss, test_accuracy = run_epoch(test_loader, False)
+    test_loss, test_accuracy, test_labels, test_predictions = run_epoch(test_loader, False, True)
     print(f'Melhor acurácia de validação: {best_validation_accuracy:.1%}; '
           f'teste final loss={test_loss:.4f} acc={test_accuracy:.1%}; checkpoint: {args.output}', flush=True)
+    print_classification_report(test_labels, test_predictions)
 
 
 if __name__ == '__main__':
