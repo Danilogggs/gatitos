@@ -21,25 +21,46 @@ from app.ml.taxonomy import BREEDS
 OXFORD_BREEDS = [breed for breed in BREEDS if breed != 'srd']
 
 
+def select_cat_samples(source: datasets.OxfordIIITPet) -> list[tuple[int, int]]:
+    """Retorna (índice da imagem, índice da raça) somente para gatos."""
+    samples = []
+    for source_index in range(len(source)):
+        image, (category, species) = source[source_index]
+        image.close()
+        if species != source.bin_class_to_idx['Cat']:
+            continue
+        breed = source.classes[category].lower().replace(' ', '_')
+        if breed not in OXFORD_BREEDS:
+            raise ValueError(f'Raça Oxford não mapeada: {breed}')
+        samples.append((source_index, OXFORD_BREEDS.index(breed)))
+
+    found = {OXFORD_BREEDS[label] for _, label in samples}
+    if found != set(OXFORD_BREEDS):
+        raise ValueError(f'Raças Oxford ausentes: {sorted(set(OXFORD_BREEDS) - found)}')
+    return samples
+
+
+def stratified_split(samples: list[tuple[int, int]], validation_ratio: float = 0.2,
+                     seed: int = 42) -> tuple[list[int], list[int]]:
+    """Separa índices por raça para preservar todas as classes nos dois conjuntos."""
+    buckets = [[index for index, (_, label) in enumerate(samples) if label == breed]
+               for breed in range(len(OXFORD_BREEDS))]
+    rng = random.Random(seed)
+    training, validation = [], []
+    for bucket in buckets:
+        rng.shuffle(bucket)
+        validation_size = max(1, round(len(bucket) * validation_ratio))
+        validation.extend(bucket[:validation_size])
+        training.extend(bucket[validation_size:])
+    return training, validation
+
+
 class OxfordCats(Dataset):
     def __init__(self, source: datasets.OxfordIIITPet, transform,
                  samples: list[tuple[int, int]] | None = None) -> None:
         self.source = source
         self.transform = transform
-        self.samples = samples if samples is not None else []
-        if samples is None:
-            for index in range(len(source)):
-                image, (category, species) = source[index]
-                image.close()
-                if species != source.bin_class_to_idx['Cat']:
-                    continue
-                breed = source.classes[category].lower().replace(' ', '_')
-                if breed not in OXFORD_BREEDS:
-                    raise ValueError(f'Raça Oxford não mapeada: {breed}')
-                self.samples.append((index, OXFORD_BREEDS.index(breed)))
-        found = {OXFORD_BREEDS[label] for _, label in self.samples}
-        if found != set(OXFORD_BREEDS):
-            raise ValueError(f'Raças Oxford ausentes: {sorted(set(OXFORD_BREEDS) - found)}')
+        self.samples = samples if samples is not None else select_cat_samples(source)
 
     def __len__(self) -> int:
         return len(self.samples)
@@ -69,35 +90,42 @@ def run() -> None:
         transforms.RandomHorizontalFlip(), transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
-    val_transform = transforms.Compose([
+    evaluation_transform = transforms.Compose([
         transforms.Resize((224, 224)), transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
+
+    # 1. Baixa/carrega os splits oficiais completos do Oxford-IIIT Pet.
     targets = ['category', 'binary-category']
-    train_source = datasets.OxfordIIITPet(args.data_dir, split='trainval', target_types=targets, download=True)
-    val_source = datasets.OxfordIIITPet(args.data_dir, split='test', target_types=targets, download=True)
-    all_train = OxfordCats(train_source, train_transform)
-    all_val = OxfordCats(train_source, val_transform, samples=all_train.samples)
-    buckets = [[index for index, (_, label) in enumerate(all_train.samples) if label == breed]
-               for breed in range(len(OXFORD_BREEDS))]
-    rng = random.Random(42)
-    train_indices, val_indices = [], []
-    for bucket in buckets:
-        rng.shuffle(bucket)
-        val_size = max(1, round(len(bucket) * 0.2))
-        val_indices.extend(bucket[:val_size])
-        train_indices.extend(bucket[val_size:])
-    train_dataset = Subset(all_train, train_indices)
-    val_dataset = Subset(all_val, val_indices)
-    test_dataset = OxfordCats(val_source, val_transform)
+    trainval_source = datasets.OxfordIIITPet(
+        args.data_dir, split='trainval', target_types=targets, download=True,
+    )
+    test_source = datasets.OxfordIIITPet(
+        args.data_dir, split='test', target_types=targets, download=True,
+    )
+
+    # 2. Remove os cães antes de criar os conjuntos usados pelo modelo.
+    trainval_samples = select_cat_samples(trainval_source)
+    test_samples = select_cat_samples(test_source)
+
+    # 3. Divide trainval por raça; o split oficial test continua independente.
+    train_indices, validation_indices = stratified_split(trainval_samples)
+    training_images = OxfordCats(trainval_source, train_transform, trainval_samples)
+    evaluation_images = OxfordCats(trainval_source, evaluation_transform, trainval_samples)
+    train_dataset = Subset(training_images, train_indices)
+    validation_dataset = Subset(evaluation_images, validation_indices)
+    test_dataset = OxfordCats(test_source, evaluation_transform, test_samples)
+
+    # 4. Cria os lotes depois que os três conjuntos estão definidos.
     loader_options = {'batch_size': args.batch_size, 'num_workers': 2, 'pin_memory': device.type == 'cuda'}
     train_loader = DataLoader(train_dataset, shuffle=True, **loader_options)
-    val_loader = DataLoader(val_dataset, **loader_options)
+    validation_loader = DataLoader(validation_dataset, **loader_options)
     test_loader = DataLoader(test_dataset, **loader_options)
-    print(f'Dispositivo: {device}; treino: {len(train_dataset)}; validação: {len(val_dataset)}; '
+    print(f'Dispositivo: {device}; treino: {len(train_dataset)}; validação: {len(validation_dataset)}; '
           f'teste: {len(test_dataset)}', flush=True)
     print('Raças:', ', '.join(OXFORD_BREEDS), flush=True)
 
+    # 5. Monta a EfficientNet-B0 e substitui o classificador pelas 12 raças.
     backbone = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
     size = backbone.classifier[1].in_features
     backbone.classifier = nn.Identity()
@@ -106,7 +134,7 @@ def run() -> None:
     breed_head.to(device)
     optimizer = torch.optim.AdamW(list(backbone.parameters()) + list(breed_head.parameters()), lr=1e-4)
     criterion = nn.CrossEntropyLoss()
-    best_accuracy = -1.0
+    best_validation_accuracy = -1.0
 
     def run_epoch(loader: DataLoader, training: bool) -> tuple[float, float]:
         backbone.train(training)
@@ -126,13 +154,14 @@ def run() -> None:
             correct += (logits.argmax(dim=1) == labels).sum().item()
         return total_loss / len(loader.dataset), correct / len(loader.dataset)
 
+    # 6. Treina e salva somente o checkpoint com melhor validação.
     for epoch in range(1, args.epochs + 1):
         train_loss, train_accuracy = run_epoch(train_loader, True)
-        val_loss, val_accuracy = run_epoch(val_loader, False)
+        validation_loss, validation_accuracy = run_epoch(validation_loader, False)
         print(f'Época {epoch}: treino loss={train_loss:.4f} acc={train_accuracy:.1%}; '
-              f'validação loss={val_loss:.4f} acc={val_accuracy:.1%}', flush=True)
-        if val_accuracy > best_accuracy:
-            best_accuracy = val_accuracy
+              f'validação loss={validation_loss:.4f} acc={validation_accuracy:.1%}', flush=True)
+        if validation_accuracy > best_validation_accuracy:
+            best_validation_accuracy = validation_accuracy
             args.output.parent.mkdir(parents=True, exist_ok=True)
             torch.save({
                 'backbone': {key: value.detach().cpu() for key, value in backbone.state_dict().items()},
@@ -142,11 +171,13 @@ def run() -> None:
                 'version': f'efficientnet-b0-oxford-epoch-{epoch}',
                 'source': 'Oxford-IIIT Pet',
             }, args.output)
+
+    # 7. Restaura o melhor checkpoint e só então mede o split oficial de teste.
     checkpoint = torch.load(args.output, map_location=device, weights_only=True)
     backbone.load_state_dict(checkpoint['backbone'])
     breed_head.load_state_dict(checkpoint['breed_head'])
     test_loss, test_accuracy = run_epoch(test_loader, False)
-    print(f'Melhor acurácia de validação: {best_accuracy:.1%}; '
+    print(f'Melhor acurácia de validação: {best_validation_accuracy:.1%}; '
           f'teste final loss={test_loss:.4f} acc={test_accuracy:.1%}; checkpoint: {args.output}', flush=True)
 
 
