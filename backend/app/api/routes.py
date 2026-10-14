@@ -2,17 +2,17 @@ import json
 import re
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, Query, UploadFile
 from supabase import Client
 
 from app.core.auth import admin_user
 from app.core.config import settings
 from app.core.db import db
-from app.llm.service import describe
+from app.llm.service import describe, describe_confirmed
 from app.ml.service import ml_service
 from app.ml.taxonomy import BREEDS, FEATURES
-from app.schemas.cats import CatEdit, CatOptional, ImageOrder
-from app.services.cats import ADMIN_FIELDS, PUBLIC_FIELDS, enrich, feedback, one
+from app.schemas.cats import CatEdit, CatOptional, ImageOrder, RankingSetting
+from app.services.cats import ADMIN_FIELDS, PUBLIC_FIELDS, enrich, feedback, one, review_event
 from app.storage.images import read_images, upload
 
 router = APIRouter(prefix='/api')
@@ -26,16 +26,30 @@ def valid_id(value: str) -> str:
 
 
 @router.get('/config')
-def public_config() -> dict:
+def public_config(client: Client = Depends(db)) -> dict:
     config = settings()
-    return {'ml_mode': config.ml_mode, 'features': FEATURES, 'breeds': BREEDS}
+    rows = client.table('app_settings').select('show_public_breed_ranking').eq('id', True).limit(1).execute().data
+    return {'ml_mode': config.ml_mode, 'breeds': BREEDS,
+            'show_public_breed_ranking': rows[0]['show_public_breed_ranking'] if rows else True}
+
+
+@router.put('/admin/settings')
+def update_settings(value: RankingSetting, client: Client = Depends(db), _: str = Depends(admin_user)) -> dict:
+    rows = client.table('app_settings').upsert({'id': True,
+        'show_public_breed_ranking': value.show_public_breed_ranking}).execute().data
+    return {'show_public_breed_ranking': rows[0]['show_public_breed_ranking']}
 
 
 @router.post('/ml/predict')
 async def predict(files: list[UploadFile] = File(...), name: str = Form(''), behavior: str = Form('')) -> dict:
     images = await read_images(files)
     prediction = ml_service().predict(images)
-    return {**prediction.as_dict(), 'description': await describe(name.strip()[:100] or 'Este gato', prediction, behavior.strip()[:1000] or None)}
+    return {
+        'breed': prediction.breed, 'breed_confidence': prediction.breed_confidence,
+        'breed_scores': prediction.breed_scores, 'colors': prediction.colors,
+        'coat_length': prediction.coat_length, 'model_version': prediction.model_version,
+        'description': await describe(name.strip()[:100] or 'Este gato', prediction, behavior.strip()[:1000] or None),
+    }
 
 
 @router.post('/cats')
@@ -49,24 +63,28 @@ async def create_cat(name: str = Form(...), files: list[UploadFile] = File(...),
         raise HTTPException(422, 'Informações opcionais inválidas') from exc
     images = await read_images(files)
     prediction = ml_service().predict(images)
-    description = await describe(name, prediction, extra.get('behavior'))
     cat_id = str(uuid4())
+    cat_data = {
+        'id': cat_id, 'name': name, **extra,
+        'breed': prediction.breed, 'coat_pattern': None,
+        'coat_length': prediction.coat_length,
+        'primary_color': prediction.colors[0] if prediction.colors else None,
+        'secondary_color': prediction.colors[1] if len(prediction.colors) > 1 else None,
+    }
+    # Use the same complete generator as the administrative refresh so every
+    # new registration reaches review with its initial description populated.
+    cat_data['description'] = await describe_confirmed(cat_data)
     uploaded = []
     try:
-        cat = client.table('cats').insert({'id': cat_id, 'name': name, **extra,
-            'breed': prediction.breed, 'coat_pattern': prediction.coat_pattern,
-            'coat_length': prediction.coat_length, 'primary_color': prediction.colors[0] if prediction.colors else None,
-            'secondary_color': prediction.colors[1] if len(prediction.colors) > 1 else None,
-            'description': description, 'status': 'PENDING_REVIEW'}).execute().data[0]
+        cat = client.table('cats').insert({**cat_data, 'status': 'PENDING_REVIEW'}).execute().data[0]
         for position, image in enumerate(images):
             row = upload(client, cat_id, image, position)
             uploaded.append(row['storage_path'])
             client.table('cat_images').insert(row).execute()
-        for feature in prediction.features:
-            client.table('cat_features').insert({'cat_id': cat_id, 'feature': feature}).execute()
         client.table('ml_predictions').insert({'cat_id': cat_id, 'predicted_breed': prediction.breed,
-            'breed_confidence': prediction.breed_confidence, 'predicted_features': prediction.features,
-            'predicted_coat_pattern': prediction.coat_pattern, 'coat_confidence': prediction.coat_confidence,
+            'breed_confidence': prediction.breed_confidence, 'breed_scores': prediction.breed_scores,
+            'predicted_features': [],
+            'predicted_coat_pattern': None, 'coat_confidence': None,
             'predicted_colors': prediction.colors, 'predicted_coat_length': prediction.coat_length,
             'model_version': prediction.model_version}).execute()
     except Exception:
@@ -123,25 +141,48 @@ def admin_cats(status: str = 'PENDING_REVIEW', client: Client = Depends(db), _: 
 
 @router.get('/admin/cats/{cat_id}')
 def admin_cat(cat_id: str, client: Client = Depends(db), _: str = Depends(admin_user)) -> dict:
-    return one(client, valid_id(cat_id), True)
+    cat_id = valid_id(cat_id)
+    cat = one(client, cat_id, True)
+    cat['review_events'] = client.table('cat_review_events').select('*').eq('cat_id', cat_id).order('created_at', desc=True).limit(50).execute().data
+    return cat
 
 
 @router.put('/cats/{cat_id}')
-def edit_cat(cat_id: str, changes: CatEdit, client: Client = Depends(db), _: str = Depends(admin_user)) -> dict:
+async def edit_cat(cat_id: str, changes: CatEdit, client: Client = Depends(db), reviewer: str = Depends(admin_user)) -> dict:
     cat_id = valid_id(cat_id)
-    one(client, cat_id, True)
+    previous = one(client, cat_id, True)
     features = list(dict.fromkeys(changes.features))
     if len(features) > len(FEATURES) or any(feature not in FEATURES for feature in features):
         raise HTTPException(422, 'Característica inválida')
-    data = changes.model_dump(exclude={'features'})
+    data = changes.model_dump(exclude={'features', 'regenerate_description'})
     data['name'] = data['name'].strip()
     if not data['name']:
         raise HTTPException(422, 'Nome obrigatório')
+    if data['breed_training_verified'] and data['breed'] not in set(BREEDS) - {'srd'}:
+        raise HTTPException(422, 'Somente uma raça definida pode ser marcada para treino')
+    if data['breed_training_verified'] and not (data['breed_verification_note'] or '').strip():
+        raise HTTPException(422, 'Informe a procedência do rótulo de raça antes de marcar para treino')
+    descriptive_fields = (
+        'name', 'breed', 'coat_length', 'primary_color', 'secondary_color',
+        'sex', 'approximate_age', 'size', 'behavior', 'health_information',
+        'location', 'additional_notes',
+    )
+    facts_changed = any(data[key] != previous.get(key) for key in descriptive_fields)
+    description_untouched = data['description'] == previous.get('description')
+    if changes.regenerate_description or (facts_changed and description_untouched):
+        data['description'] = await describe_confirmed(data)
     client.table('cats').update(data).eq('id', cat_id).execute()
     client.table('cat_features').delete().eq('cat_id', cat_id).execute()
     if features:
         client.table('cat_features').insert([{'cat_id': cat_id, 'feature': feature} for feature in features]).execute()
-    return one(client, cat_id, True)
+    updated = one(client, cat_id, True)
+    review_changed = any(updated.get(field) != previous.get(field) for field in
+                         ('breed', 'breed_training_verified', 'breed_verification_note'))
+    if review_changed:
+        review_event(client, updated, reviewer, 'edit', previous.get('breed'))
+        if previous.get('status') in ('PUBLISHED', 'REJECTED', 'ADOPTED', 'ARCHIVED'):
+            feedback(client, updated, reviewer)
+    return updated
 
 
 def transition(cat_id: str, statuses: tuple[str, ...], target: str, client: Client, reviewer: str) -> dict:
@@ -153,6 +194,7 @@ def transition(cat_id: str, statuses: tuple[str, ...], target: str, client: Clie
         raise HTTPException(409, 'O gato precisa ter uma foto')
     if target in ('PUBLISHED', 'REJECTED'):
         feedback(client, cat, reviewer)
+        review_event(client, cat, reviewer, 'publish' if target == 'PUBLISHED' else 'reject', cat.get('breed'))
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc).isoformat()
     data = {'status': target}
@@ -168,7 +210,10 @@ def submit(cat_id: str, client: Client = Depends(db), reviewer: str = Depends(ad
 
 
 @router.post('/cats/{cat_id}/publish')
-def publish(cat_id: str, client: Client = Depends(db), reviewer: str = Depends(admin_user)) -> dict:
+def publish(cat_id: str, confirmed_visual: bool = Body(..., embed=True),
+            client: Client = Depends(db), reviewer: str = Depends(admin_user)) -> dict:
+    if not confirmed_visual:
+        raise HTTPException(422, 'Confirme raça, cores e comprimento do pelo antes de publicar')
     return transition(cat_id, ('PENDING_REVIEW',), 'PUBLISHED', client, reviewer)
 
 

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 
@@ -81,7 +82,14 @@ class RealMLService(MLService):
         self.feature_head = load_head('feature', len(FEATURES))
         self.pattern_head = load_head('pattern', len(PATTERNS))
         self.color_head = load_head('color', len(COLORS))
-        self.length_head = load_head('length', len(COAT_LENGTHS))
+        saved_color_thresholds = checkpoint.get('color_thresholds', {})
+        self.color_thresholds = [float(saved_color_thresholds.get(color, 0.5)) for color in COLORS]
+        saved_lengths = list(checkpoint.get('coat_lengths', COAT_LENGTHS[1:]))
+        if not saved_lengths or len(set(saved_lengths)) != len(saved_lengths) or set(saved_lengths) - set(COAT_LENGTHS):
+            raise ValueError('Checkpoint de comprimento incompatível com a taxonomia atual')
+        self.coat_lengths = saved_lengths
+        self.length_head = load_head('length', len(saved_lengths))
+        self.length_min_confidence = float(checkpoint.get('length_min_confidence', 0.5))
         self.breed_min_confidence = config.ml_breed_min_confidence
         self.version = str(checkpoint.get('version', 'efficientnet-b0'))
         self.model.eval()
@@ -111,7 +119,9 @@ class RealMLService(MLService):
             colors = []
             if self.color_head is not None:
                 scores = self.torch.sigmoid(self.color_head(vectors))[0]
-                colors = [label for label, score in zip(COLORS, scores.tolist()) if score >= 0.5]
+                candidates = [(label, score) for label, score, threshold
+                              in zip(COLORS, scores.tolist(), self.color_thresholds) if score >= threshold]
+                colors = [label for label, _ in sorted(candidates, key=lambda item: item[1], reverse=True)[:2]]
             coat_pattern = None
             coat_confidence = None
             if self.pattern_head is not None:
@@ -122,7 +132,8 @@ class RealMLService(MLService):
             coat_length = None
             if self.length_head is not None:
                 scores = self.torch.softmax(self.length_head(vectors), dim=1)[0]
-                coat_length = COAT_LENGTHS[int(scores.argmax())]
+                if float(scores.max()) >= self.length_min_confidence:
+                    coat_length = self.coat_lengths[int(scores.argmax())]
         return Prediction(breed, breed_confidence, features,
                           coat_pattern, colors, coat_length, coat_confidence, self.version,
                           {label: float(score) for label, score in zip(self.breeds, breeds.tolist())})
@@ -132,6 +143,7 @@ class RealMLService(MLService):
         return self.torch.nn.functional.normalize(vector, dim=0).tolist()
 
 
+@lru_cache(maxsize=1)
 def ml_service() -> MLService:
     mode = settings().ml_mode.lower()
     if mode == 'mock':

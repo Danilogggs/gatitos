@@ -31,10 +31,11 @@ export const api = {
   adminCats: (status: Status) => request<Cat[]>(`/admin/cats?status=${status}`, {}, true),
   adminCat: (id: string) => request<Cat>(`/admin/cats/${id}`, {}, true),
   edit: (id: string, cat: Record<string,unknown>) => request<Cat>(`/cats/${id}`, { method: 'PUT', body: JSON.stringify(cat) }, true),
-  action: (id: string, action: string) => request<Cat>(`/cats/${id}/${action}`, { method: 'POST' }, true),
+  action: (id: string, action: string, confirmedVisual = false) => request<Cat>(`/cats/${id}/${action}`, { method: 'POST', ...(action === 'publish' ? { body: JSON.stringify({ confirmed_visual: confirmedVisual }) } : {}) }, true),
   addImages: (id: string, files: File[]) => { const form = new FormData(); files.forEach(file => form.append('files', file)); return request<Cat>(`/cats/${id}/images`, { method: 'POST', body: form }, true) },
   deleteImage: (id: string, imageId: string) => request<Cat>(`/cats/${id}/images/${imageId}`, { method: 'DELETE' }, true),
   primaryImage: (id: string, imageId: string) => request<Cat>(`/cats/${id}/images/${imageId}/primary`, { method: 'PUT' }, true),
   reorder: (id: string, imageIds: string[]) => request<Cat>(`/cats/${id}/images/order`, { method: 'PUT', body: JSON.stringify({image_ids: imageIds}) }, true),
-  stats: () => request<Record<string,number>>('/admin/ml/stats', {}, true)
+  stats: () => request<Record<string,number>>('/admin/ml/stats', {}, true),
+  setRankingVisibility: (show: boolean) => request<{show_public_breed_ranking:boolean}>('/admin/settings', { method: 'PUT', body: JSON.stringify({show_public_breed_ranking: show}) }, true)
 }

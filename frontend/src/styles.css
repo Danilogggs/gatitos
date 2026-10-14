@@ -7,7 +7,7 @@
 .breed-scores p{margin:0 0 16px;font-size:12px;line-height:1.5;color:#697d74}
 .breed-score-list{display:grid;gap:10px}
 .breed-score-row{display:grid;grid-template-columns:minmax(105px,150px) minmax(70px,1fr) 68px;align-items:center;gap:12px;font-size:12px}
-.breed-score-name{text-transform:capitalize;color:#315c53}
+.breed-score-name{color:#315c53}
 .breed-score-row strong{text-align:right;font-variant-numeric:tabular-nums;color:#244742}
 .breed-score-track{height:8px;overflow:hidden;border-radius:999px;background:#eef2ec}
 .breed-score-track span{display:block;height:100%;border-radius:999px;background:#559a84}
@@ -23,3 +23,5 @@
 .photo-dropzone strong{color:#315c53;font-size:15px}
 .photo-dropzone .dropzone-count{margin-top:5px;border-radius:20px;background:#dceadf;color:#426758;padding:5px 10px;font-size:11px;font-weight:800}
 .field .field-error{color:#a54132;font-weight:700}
+.field select{border:1px solid #dfe6dd;border-radius:10px;background:#fff;padding:12px;color:#314a41;outline-color:#89ac90;width:100%}
+.review-confirmation{display:flex;align-items:flex-start;gap:10px;margin-top:18px;color:#315c53;font-size:13px;font-weight:700;line-height:1.5;cursor:pointer}.review-confirmation input{width:18px;height:18px;margin:0;flex:none}

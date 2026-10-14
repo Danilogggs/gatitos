@@ -13,6 +13,8 @@ create table if not exists public.cats (
   sex text, approximate_age text, size text, breed text, coat_pattern text,
   coat_length text, primary_color text, secondary_color text,
   behavior text, health_information text, location text, additional_notes text,
+  breed_training_verified boolean not null default false,
+  breed_verification_note text,
   description text,
   status text not null default 'DRAFT' check (status in ('DRAFT','PENDING_REVIEW','PUBLISHED','REJECTED','ADOPTED','ARCHIVED')),
   created_by uuid references auth.users(id) on delete set null,
@@ -42,7 +44,7 @@ create table if not exists public.cat_features (
 create table if not exists public.ml_predictions (
   id uuid primary key default gen_random_uuid(),
   cat_id uuid not null references public.cats(id) on delete cascade,
-  predicted_breed text, breed_confidence real,
+  predicted_breed text, breed_confidence real, breed_scores jsonb not null default '{}'::jsonb,
   predicted_features text[] not null default '{}',
   predicted_coat_pattern text, coat_confidence real,
   predicted_colors text[] not null default '{}', predicted_coat_length text,
@@ -59,6 +61,24 @@ create table if not exists public.prediction_feedback (
   corrected_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.cat_review_events (
+  id uuid primary key default gen_random_uuid(),
+  cat_id uuid not null references public.cats(id) on delete cascade,
+  prediction_id uuid references public.ml_predictions(id) on delete set null,
+  event_type text not null check (event_type in ('edit','publish','reject')),
+  previous_breed text, reviewed_breed text,
+  breed_training_verified boolean not null default false,
+  breed_verification_note text,
+  reviewed_by uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.app_settings (
+  id boolean primary key default true check (id),
+  show_public_breed_ranking boolean not null default true
+);
+insert into public.app_settings (id) values (true) on conflict (id) do nothing;
 
 create table if not exists public.embeddings (
   id uuid primary key default gen_random_uuid(),
@@ -84,6 +104,8 @@ alter table public.cat_images enable row level security;
 alter table public.cat_features enable row level security;
 alter table public.ml_predictions enable row level security;
 alter table public.prediction_feedback enable row level security;
+alter table public.cat_review_events enable row level security;
+alter table public.app_settings enable row level security;
 alter table public.embeddings enable row level security;
 -- Sem policies nas tabelas: acesso aos dados somente pela API com service role.
 

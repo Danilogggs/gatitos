@@ -5,9 +5,15 @@
 **/.venv/
 **/node_modules/
 **/dist/
+*.tsbuildinfo
 *.pt
 !backend/models/catcare-oxford.pt
 *.pth
 dataset/
 
 **/.env.local
+.codex-server-logs/
+.server-logs/
+tmp/
+/*.jpg
+/*.png

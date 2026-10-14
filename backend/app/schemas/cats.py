@@ -32,7 +32,14 @@ class CatEdit(CatOptional):
     primary_color: str | None = Field(None, max_length=50)
     secondary_color: str | None = Field(None, max_length=50)
     description: str | None = Field(None, max_length=2000)
+    regenerate_description: bool = False
+    breed_training_verified: bool = False
+    breed_verification_note: str | None = Field(None, max_length=500)
     features: list[str] = Field(default_factory=list)
+
+
+class RankingSetting(BaseModel):
+    show_public_breed_ranking: bool
 
 
 class ImageOrder(BaseModel):

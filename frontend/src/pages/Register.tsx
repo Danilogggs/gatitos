@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom'
 import { BreedScores } from '../components/BreedScores'
 import { api } from '../services/api'
 import type { Prediction } from '../types'
+import { coatLengthLabel } from '../utils/coatLength'
+import { breedLabel, colorLabel } from '../utils/catLabels'
 
 const optionalFields = [
   ['sex', 'Sexo'],
@@ -22,13 +24,17 @@ export function Register() {
   const [optional, setOptional] = useState<Record<string, string>>({})
   const [prediction, setPrediction] = useState<Prediction | null>(null)
   const [mode, setMode] = useState('mock')
+  const [showPublicRanking, setShowPublicRanking] = useState<boolean | null>(null)
   const [working, setWorking] = useState(false)
   const [error, setError] = useState('')
   const [uploadError, setUploadError] = useState('')
   const [dragActive, setDragActive] = useState(false)
+  const breedRanking = Object.entries(prediction?.breed_scores || {})
+    .sort((a, b) => b[1] - a[1]).slice(0, 3)
+  const breedUnconfirmed = !prediction?.breed || prediction.breed === 'srd'
 
   useEffect(() => {
-    api.config().then(data => setMode(data.ml_mode)).catch(() => {})
+    api.config().then(data => { setMode(data.ml_mode); setShowPublicRanking(data.show_public_breed_ranking ?? false) }).catch(() => setShowPublicRanking(false))
   }, [])
 
   useEffect(() => {
@@ -79,6 +85,10 @@ export function Register() {
   }
 
   const submit = async () => {
+    if (!name.trim() || !files.length) {
+      setError('Informe o nome e adicione pelo menos uma foto.')
+      return
+    }
     setWorking(true)
     setError('')
     try {
@@ -177,20 +187,22 @@ export function Register() {
           ))}
         </div>
         {error && <p className="error">{error}</p>}
-        {!prediction ? (
-          <button className="button primary" disabled={working} onClick={analyze}>
-            {working ? `Analisando as características de ${name}...` : 'Analisar e continuar →'}
+        {!prediction || !showPublicRanking ? (
+          <button className="button primary" disabled={working || showPublicRanking === null} onClick={showPublicRanking ? analyze : submit}>
+            {showPublicRanking === null ? 'Carregando…' : showPublicRanking
+              ? working ? `Analisando as características de ${name}...` : 'Analisar e continuar →'
+              : working ? 'Enviando para revisão...' : 'Enviar para revisão →'}
           </button>
         ) : (
           <div className="prediction-box">
             <span className="eyebrow">✦ PRÉVIA DA ANÁLISE</span>
-            {mode === 'mock' && <p className="notice">Modo demonstração: o modelo ainda não foi treinado. Nenhuma característica foi inferida.</p>}
+            {mode === 'mock' && <p className="notice">Modo demonstração: o modelo ainda não foi treinado. Nenhum atributo foi identificado.</p>}
             <div className="prediction-grid">
-              <div><small>Raça provável · IA</small><strong>{prediction.breed || 'Ainda não identificada'}</strong></div>
-              <div><small>Características · IA</small><strong>{prediction.features?.join(' · ') || 'Ainda não identificadas'}</strong></div>
-              <div><small>Padrão · IA</small><strong>{prediction.coat_pattern || 'Ainda não identificado'}</strong></div>
-              <div><small>Cores · IA</small><strong>{prediction.colors?.join(' · ') || 'Ainda não identificadas'}</strong></div>
+              <div><small>Raça sugerida · IA</small><strong>{breedUnconfirmed ? 'Raça não confirmada' : breedLabel(prediction.breed)}</strong><small>{prediction.breed_confidence != null ? `${Math.round(prediction.breed_confidence * 100)}% de confiança na sugestão` : 'Confiança insuficiente para sugerir uma raça'}</small></div>
+              <div><small>Cores · IA</small><strong>{prediction.colors?.map(colorLabel).join(' · ') || 'Ainda não identificadas'}</strong></div>
+              <div><small>Comprimento do pelo · IA</small><strong>{coatLengthLabel(prediction.coat_length) || 'Ainda não identificado'}</strong></div>
             </div>
+            {breedRanking.length > 0 && <p className="muted">Principais alternativas: {breedRanking.map(([breed, score]) => `${breedLabel(breed)} (${Math.round(score * 100)}%)`).join(' · ')}. São pontuações da IA, não confirmação de raça.</p>}
             <BreedScores scores={prediction.breed_scores} />
             <p className="muted">Descrição sugerida: {prediction.description}</p>
             <p className="muted">As informações serão revisadas por um administrador antes da publicação.</p>

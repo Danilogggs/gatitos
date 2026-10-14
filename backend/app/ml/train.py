@@ -94,7 +94,8 @@ def run() -> None:
             args.output.parent.mkdir(parents=True, exist_ok=True)
             torch.save({'backbone':{key:value.detach().cpu() for key,value in backbone.state_dict().items()},
                 **{name:{key:value.detach().cpu() for key,value in head.state_dict().items()} for name,head in heads.items()},
-                'breeds': BREEDS, 'trained_heads': ['breed', 'feature', 'pattern', 'color', 'length'],
+                'breeds': BREEDS, 'coat_lengths': COAT_LENGTHS,
+                'trained_heads': ['breed', 'feature', 'pattern', 'color', 'length'],
                 'version':f'efficientnet-b0-epoch-{epoch+1}'}, args.output)
 
 

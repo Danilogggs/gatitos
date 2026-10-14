@@ -15,4 +15,4 @@ FEATURES = {
 }
 PATTERNS = ['solid', 'bicolor', 'tuxedo', 'tabby', 'tortoiseshell', 'calico', 'colorpoint']
 COLORS = ['black', 'white', 'gray', 'orange', 'cream', 'brown']
-COAT_LENGTHS = ['short', 'medium', 'long']
+COAT_LENGTHS = ['hairless', 'short', 'medium', 'long']

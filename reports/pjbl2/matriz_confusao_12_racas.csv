@@ -1,0 +1,13 @@
+raca_real,abyssinian,bengal,birman,bombay,british_shorthair,egyptian_mau,maine_coon,persian,ragdoll,russian_blue,siamese,sphynx
+abyssinian,19,0,0,0,0,0,0,0,0,1,0,0
+bengal,0,16,0,0,0,3,1,0,0,0,0,0
+birman,0,0,19,0,0,0,0,0,1,0,0,0
+bombay,0,0,0,20,0,0,0,0,0,0,0,0
+british_shorthair,0,0,0,0,17,0,0,0,0,3,0,0
+egyptian_mau,0,2,0,0,0,18,0,0,0,0,0,0
+maine_coon,0,0,0,0,0,0,19,1,0,0,0,0
+persian,0,0,0,0,0,0,0,20,0,0,0,0
+ragdoll,0,0,2,0,0,0,1,1,16,0,0,0
+russian_blue,0,0,0,0,1,0,0,0,0,19,0,0
+siamese,0,0,3,0,0,0,0,0,0,0,16,1
+sphynx,0,0,0,0,0,0,0,0,0,0,0,20

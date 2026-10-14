@@ -1,3 +1,5 @@
+import { breedLabel } from '../utils/catLabels'
+
 type Props = {
   scores?: Record<string, number>
 }
@@ -16,7 +18,7 @@ export function BreedScores({ scores }: Props) {
     <p>Comparação entre as raças treinadas. SRD não foi treinado; estas porcentagens não confirmam a raça.</p>
     <div className="breed-score-list">
       {ranking.map(([breed, score]) => <div className="breed-score-row" key={breed}>
-        <span className="breed-score-name">{breed.replaceAll('_', ' ')}</span>
+        <span className="breed-score-name">{breedLabel(breed)}</span>
         <div className="breed-score-track" aria-hidden="true"><span style={{ width: `${Math.max(score * 100, 0.2)}%` }} /></div>
         <strong>{percent.format(score * 100)}%</strong>
       </div>)}
